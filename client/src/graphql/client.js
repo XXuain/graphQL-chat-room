@@ -1,25 +1,42 @@
 import {
-  ApolloClient, ApolloLink, HttpLink, InMemoryCache
+  ApolloClient,
+  ApolloLink,
+  HttpLink,
+  InMemoryCache,
+  split,
 } from 'apollo-boost';
+import { WebSocketLink } from 'apollo-link-ws';
+import { getMainDefinition } from 'apollo-utilities';
 import { getAccessToken } from '../auth';
 
-const httpUrl = 'http://localhost:9000/graphql';
+const httpUrl = 'http://localhost:9002/graphql';
+const wsUrl = 'ws://localhost:9002/graphql';
 
 const httpLink = ApolloLink.from([
   new ApolloLink((operation, forward) => {
     const token = getAccessToken();
     if (token) {
-      operation.setContext({headers: {'authorization': `Bearer ${token}`}});
+      operation.setContext({ headers: { authorization: `Bearer ${token}` } });
     }
     return forward(operation);
   }),
-  new HttpLink({uri: httpUrl})
+  new HttpLink({ uri: httpUrl }),
 ]);
+
+const wsLink = new WebSocketLink({
+  uri: wsUrl,
+  options: { lazy: true, reconnect: true },
+});
+
+const isSubscription = (operation) => {
+  const def = getMainDefinition(operation.query);
+  return def.kind === 'OperationDefinition' && def.operation === 'subscription';
+};
 
 const client = new ApolloClient({
   cache: new InMemoryCache(),
-  link: httpLink,
-  defaultOptions: {query: {fetchPolicy: 'no-cache'}}
+  link: split(isSubscription, wsLink, httpLink),
+  defaultOptions: { query: { fetchPolicy: 'no-cache' } },
 });
 
 export default client;
